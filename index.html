@@ -2,152 +2,164 @@
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-  <link rel="shortcut icon" type="image/png" href="img/favicon.png" />
-  <title>Happy Birthday Natalie!!! :)</title>
-  <!-- Google Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400&display=swap" rel="stylesheet">
-  <!-- My Style -->
-  <link rel="stylesheet" href="./style/main.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <meta name="theme-color" content="#ff9a9e" />
+    <meta name="description" content="A beautiful OS-style homepage with photos, notes, and music" />
+    <link rel="shortcut icon" type="image/png" href="img/favicon.png" />
+    <title>happy birthday my love!</title>
+    <!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- Firebase Configuration -->
+    <script src="./config.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    <!-- My Style -->
+    <link rel="stylesheet" href="./style/main.css" />
 </head>
 
 <body>
-
-    <audio class="song" loop autoplay>
-        <source src="./music/hbd.m4a" type="audio/mp4">
-        </source>
-        Your browser isn't invited for super fun audio time.
-    </audio>
-
-    <div class="container">
-        <div class="one">
-            <h1 class="one">
-                Hi
-                <span id="name">Natalie</span>
-            </h1>
-            <p class="two" id="greetingText">I wanted to use my nerd skills to make something special for a special girl. I hope this isnt too cringe</p>
+    <!-- Loading screen -->
+    <div id="loading-screen"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #a8edea 100%); display: flex; align-items: center; justify-content: center; z-index: 10000; transition: opacity 0.5s ease;">
+        <div style="text-align: center;">
+            <div
+                style="width: 60px; height: 60px; border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid white; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;">
+            </div>
+            <p style="color: white; font-size: 18px; font-weight: 500; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                Loading...</p>
         </div>
+    </div>
 
-        <div class="three">
-            <p>Happy 23rd birthdayyy!! :D</p>
-        </div>
 
-        <div class="four">
-            <div class="text-box">
-                <p class="hbd-chatbox">
-                These past seven months have made me so happy. It's a joy to be your boyfriend. I've always wanted a tender, fun, bright love like we have. This past year has had some really challenging times for you, but you continue to achieve great things while remaining selfless. Never forget how amazing you are! 
-                </p>
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+        <div class="nav-container">
+            <div class="nav-brand">Happy Birthday! 🎉</div>
+            <div class="nav-menu">
+                <div class="nav-item dropdown">
+                    <button class="nav-button" data-app="photos">
+                        <span>📸 pics</span>
+                    </button>
+                </div>
+                <div class="nav-item dropdown">
+                    <button class="nav-button" data-app="date-ideas">
+                        <span>💡 date ideas</span>
+                    </button>
+                </div>
+                <div class="nav-item dropdown">
+                    <button class="nav-button" data-app="music-player">
+                        <span>🎶 our songsss</span>
+                    </button>
+                </div>
             </div>
         </div>
+    </nav>
 
-        <div class="five">
-            <p class="idea-1">You are a beautiful, smart, strong, driven, funny, and kind young woman. </p>
-            <p class="idea-2">You deserve everything you want out of life.</p>
-            <p class="idea-3">
-                i love making memories with <br>
-                <strong>you</strong>
-                .
-            </p>
-            <p class="idea-4">I hope you use this little website</p>
-            <p class="idea-5">
-                whenever you need a reminder of how amazing you are 
-                <span>:)</span>
-            </p>
+    <!-- Main Content Area -->
+    <div class="desktop-container">
+        <!-- Desktop Background -->
+        <div class="desktop-background"></div>
+
+        <!-- Photos Column Left -->
+        <div class="photos-column" id="photos-column-left"></div>
+
+        <!-- Main Content Wrapper -->
+        <div class="main-content-wrapper">
+
+            <!-- Birthday Content in Center -->
+            <div class="birthday-center-content">
+                <div class="container">
+                    <div class="one">
+                        <h1 class="one">Happy Birthday Natalie!</h1>
+                    </div>
+
+                    <div class="four">
+                        <div class="text-box">
+                            <p class="hbd-chatbox">
+                                You are an <strong>absolute dream</strong> - you light up my life and every moment with
+                                you feels like home. You make me want to be the best version of myself because that's
+                                what you deserve.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="five">
+                        <p class="idea-1">We took a big step moving to a new city together this year - and it has been
+                            an absolute joy every step of the way.</p>
+                        <p class="idea-2">I look forward to every weekend farmers market trip, every cozy Sunday
+                            morning, and every homemade dinner with you after work.</p>
+                        <p class="idea-3">
+                            I feel like being with you is effortlessly perfect - we know how to make
+                            each other happy and enjoy doing it.
+                        </p>
+                        <p class="idea-4">I can't wait to see what the future holds.</p>
+                        <p class="idea-5">
+                            Have a lovely <strong>24th Birthday!</strong><br>
+                            I love you to the moon and back! 🌙
+                        </p>
+                    </div>
+
+                    <div class="three">
+                        <p style="font-size: 0.9rem; margin-top: 20px;">BTW - Your website got a little upgrade ✨</p>
+                    </div>
+
+                    <div class="four">
+                        <p style="font-size: 0.85rem; line-height: 1.6; color: #666;">
+                            Hopefully every year I can add a little something to it. We can watch it grow as our
+                            relationship does. Now we can use it to plan and track dates, share our favorite songs (fuck
+                            spotify), and keep a gallery of our favorite memories.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <!-- Photos Column Right -->
+            <div class="photos-column" id="photos-column-right"></div>
+
         </div>
+    </div>
 
-        <div class="six">
-            <img src="./img/natalie.png" alt="profile" class="profile-picture" id="imagePath"/>
-            <img src="img/hat.svg" alt="hat" class="hat" />
-            <div class="wish">
-                <h3 class="wish-hbd">Happy Birthday!</h3>
-                <h5 id="wishText">May we have many more together</h5>
+    <!-- Modal Container for Apps -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal-window" id="modal-window">
+            <div class="modal-header">
+                <span class="modal-title" id="modal-title">App</span>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-content" id="modal-content">
+                <!-- App content will be loaded here -->
             </div>
         </div>
+    </div>
 
-        <div class="seven">
-            <div class="baloons">
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon2.svg" alt="" />
-                <img src="img/ballon1.svg" alt="" />
-                <img src="img/ballon3.svg" alt="" />
+    <!-- Photos Column Right -->
+    <div class="photos-column" id="photos-column-right"></div>
+    </div>
+    </div>
+
+    <!-- Mini Music Player -->
+    <div class="mini-player" id="mini-player" style="display: none;">
+        <div class="mini-player-info">
+            <div class="mini-player-icon">🎵</div>
+            <div class="mini-player-text">
+                <div class="mini-player-title" id="mini-player-title">No track</div>
+                <div class="mini-player-artist" id="mini-player-artist">Unknown</div>
             </div>
         </div>
-
-        <div class="eight">
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-            <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="20" cy="20" r="20" />
-            </svg>
-        </div>
-
-        <div class="nine">
-            <p>Okay, now come back and tell me if you liked it.</p>
-            <p id="replay">Or click, if you want to watch it again.</p>
-            <p class="last-smile">:)</p>
+        <div class="mini-player-controls">
+            <button class="mini-control-btn" id="mini-prev-btn" title="Previous">⏮</button>
+            <button class="mini-control-btn mini-play-pause" id="mini-play-pause-btn" title="Play/Pause">▶</button>
+            <button class="mini-control-btn" id="mini-next-btn" title="Next">⏭</button>
         </div>
     </div>
 
 </body>
-    <!-- Greensock -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
-    <!-- Sweetalert -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script type="application/javascript" src="./script/main.js"></script>
+<script type="application/javascript" src="./script/main.js"></script>
 
 </html>
