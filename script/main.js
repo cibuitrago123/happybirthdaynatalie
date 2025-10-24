@@ -157,14 +157,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Storage Manager Class
+// STORAGE STRATEGY: Firebase ONLY - No localStorage (like date ideas)
+// - ALL data stored in Firebase (Firestore for text, Storage for media)
+// - Requires internet connection to save/load
+// - All data uses 'shared_' prefix for cross-user/device sharing
+// - Media files (photos/audio) use Firebase Storage
+// - Text data (date ideas, notes, etc.) uses Firestore
+// - No offline mode - Firebase is the single source of truth
 class StorageManager {
     constructor() {
         this.userId = this.generateUserId();
         this.isOnline = navigator.onLine;
-        this.pendingOperations = [];
 
         this.setupOnlineStatusHandlers();
-        this.processPendingOperations();
         this.updateConnectionStatus();
     }
 
@@ -203,13 +208,14 @@ class StorageManager {
     setupOnlineStatusHandlers() {
         window.addEventListener('online', () => {
             this.isOnline = true;
-            console.log('Connection restored, syncing data...');
-            this.processPendingOperations();
+            console.log('🌐 Connection restored!');
+            this.updateConnectionStatus();
         });
 
         window.addEventListener('offline', () => {
             this.isOnline = false;
-            console.log('Connection lost, using offline mode');
+            console.log('📴 Connection lost - Firebase operations will fail until reconnected');
+            this.updateConnectionStatus();
         });
     }
 
@@ -224,248 +230,103 @@ class StorageManager {
                 throw new Error('Cannot save null or undefined data');
             }
 
+            // Check if Firebase is available
+            if (!this.isOnline || !firebaseReady) {
+                throw new Error('Cannot save: Internet connection required. Please check your connection and try again.');
+            }
+
             // Determine storage strategy based on data type
             const dataSize = JSON.stringify(data).length;
             const isMediaFile = key.includes('music_') || key.includes('photo_');
-            const isDateIdeas = key.includes('date_ideas');
 
             if (isMediaFile) {
-                // All media files (photos and audio) go to Firebase Storage
-                console.log(`Media file detected (${(dataSize / 1024 / 1024).toFixed(2)}MB), using Firebase Storage`);
+                // Media files (photos and audio) go to Firebase Storage
+                console.log(`Media file detected (${(dataSize / 1024 / 1024).toFixed(2)}MB), saving to Firebase Storage`);
 
-                if (this.isOnline && firebaseReady && window.storage) {
-                    try {
-                        const storageUrl = await this.saveToFirebaseStorage(key, data);
-
-                        // Store reference with Firebase Storage URL
-                        const localKey = `${this.userId}_${key}`;
-                        const refData = {
-                            ...data,
-                            dataUrl: storageUrl, // Replace base64 with Firebase Storage URL
-                            isStorageRef: true,
-                            timestamp: Date.now(),
-                            synced: true,
-                            size: dataSize
-                        };
-
-                        localStorage.setItem(localKey, JSON.stringify({
-                            data: refData,
-                            timestamp: Date.now(),
-                            synced: true
-                        }));
-                        console.log(`StorageManager: Media file saved to Firebase Storage: ${key}`);
-                        return true;
-                    } catch (error) {
-                        console.error(`Failed to save media file to Firebase Storage:`, error);
-                        throw new Error('Media file could not be saved to cloud storage. Please check your connection.');
-                    }
-                } else {
-                    throw new Error('Media files require cloud storage. Please check your internet connection.');
+                if (!window.storage) {
+                    throw new Error('Firebase Storage not available');
                 }
-            } else if (isDateIdeas) {
-                // Date ideas go to Firestore (text data)
-                console.log(`Date ideas data (${(dataSize / 1024).toFixed(1)}KB), using Firestore`);
 
-                // Check localStorage quota before saving
-                await this.checkStorageQuota(dataSize);
+                const storageUrl = await this.saveToFirebaseStorage(key, data);
 
-                // Save to localStorage first for immediate access
-                const localKey = `${this.userId}_${key}`;
-                localStorage.setItem(localKey, JSON.stringify({
-                    data: data,
-                    timestamp: Date.now(),
-                    synced: false
-                }));
-                console.log(`StorageManager: Saved to localStorage: ${key}`);
-            } else {
-                // Other data types use localStorage only
-                console.log(`Other data (${(dataSize / 1024).toFixed(1)}KB), using localStorage only`);
-
-                // Check localStorage quota before saving
-                await this.checkStorageQuota(dataSize);
-
-                // Save to localStorage
-                const localKey = `${this.userId}_${key}`;
-                localStorage.setItem(localKey, JSON.stringify({
-                    data: data,
-                    timestamp: Date.now(),
-                    synced: false
-                }));
-                console.log(`StorageManager: Saved to localStorage: ${key}`);
-            }
-
-            // Try to save to Firestore only for date ideas
-            if (isDateIdeas && this.isOnline && firebaseReady && db) {
-                try {
-                    console.log(`StorageManager: Attempting Firestore save for date ideas: ${key}`);
-
-                    // Add timeout to Firestore operation
-                    const firestorePromise = this.saveToFirestore(key, data);
-                    const timeoutPromise = new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('Firestore save timeout')), 15000); // 15 second timeout
-                    });
-
-                    await Promise.race([firestorePromise, timeoutPromise]);
-                    console.log(`StorageManager: Firestore save successful for: ${key}`);
-
-                    // Mark as synced in localStorage
-                    const localKey = `${this.userId}_${key}`;
-                    localStorage.setItem(localKey, JSON.stringify({
-                        data: data,
-                        timestamp: Date.now(),
-                        synced: true
-                    }));
-                } catch (firestoreError) {
-                    console.warn(`StorageManager: Firestore save failed for ${key}, queuing for later:`, firestoreError);
-
-                    // Queue for later sync if Firestore fails
-                    this.pendingOperations.push({
-                        type: 'save',
-                        key: key,
-                        data: data,
-                        timestamp: Date.now()
-                    });
-                }
-            } else if (isDateIdeas) {
-                const reason = !this.isOnline ? 'offline' :
-                    !firebaseReady ? 'firebase not ready' :
-                        !db ? 'no database' : 'unknown';
-                console.log(`StorageManager: Cannot sync date ideas (${reason}), queuing: ${key}`);
-
-                // Queue for later sync
-                this.pendingOperations.push({
-                    type: 'save',
-                    key: key,
-                    data: data,
+                // Save metadata to Firestore with Storage URL (without the large base64 data)
+                const metadata = {
+                    id: data.id,
+                    filename: data.filename,
+                    originalName: data.originalName,
+                    size: data.size,
+                    type: data.type,
+                    uploadDate: data.uploadDate,
+                    lastModified: data.lastModified,
+                    metadata: data.metadata,
+                    dataUrl: storageUrl, // Firebase Storage URL (replaces base64)
+                    isStorageRef: true,
                     timestamp: Date.now()
-                });
-            }
+                };
 
-            return true;
+                await this.saveToFirestore(key, metadata);
+                console.log(`✅ Media file saved to Firebase Storage: ${key}`);
+                return true;
+            } else {
+                // Text data goes to Firestore
+                console.log(`Saving data (${(dataSize / 1024).toFixed(1)}KB) to Firestore`);
+
+                if (!db) {
+                    throw new Error('Firestore not available');
+                }
+
+                await this.saveToFirestore(key, data);
+                console.log(`✅ Data saved to Firestore: ${key}`);
+                return true;
+            }
         } catch (error) {
             console.error('StorageManager: Error saving data:', error);
-            return false;
+            throw error; // Propagate error to caller
         }
     }
 
     async loadData(key) {
         try {
-            const localKey = `${this.userId}_${key}`;
-            let localData = null;
-
-            // Try to get from localStorage first
-            const localItem = localStorage.getItem(localKey);
-            if (localItem) {
-                const parsed = JSON.parse(localItem);
-
-                // Check if this is a cloud storage reference
-                if (parsed.isFirestoreRef) {
-                    console.log(`Loading large file from Firestore: ${key}`);
-                    if (this.isOnline && firebaseReady && db) {
-                        try {
-                            const firestoreData = await this.loadFromFirestore(key);
-                            return firestoreData ? firestoreData.data : null;
-                        } catch (error) {
-                            console.error(`Failed to load large file from Firestore:`, error);
-                            throw new Error('Could not load large file from cloud storage');
-                        }
-                    } else {
-                        throw new Error('Large file requires internet connection to load');
-                    }
-                } else if (parsed.data && parsed.data.isStorageRef) {
-                    console.log(`Loading audio file from Firebase Storage: ${key}`);
-                    // For Firebase Storage files, the data already contains the download URL
-                    // No additional loading needed - just return the data with the URL
-                    localData = parsed.data;
-                } else {
-                    localData = parsed.data;
-                }
+            // Check if Firebase is available
+            if (!this.isOnline || !firebaseReady || !db) {
+                throw new Error('Cannot load: Internet connection required. Please check your connection and try again.');
             }
 
-            // If online and Firebase ready, try to get latest from cloud
-            if (this.isOnline && firebaseReady && db) {
-                try {
-                    const cloudData = await this.loadFromFirestore(key);
+            console.log(`Loading from Firebase: ${key}`);
+            const cloudData = await this.loadFromFirestore(key);
 
-                    if (cloudData) {
-                        // Compare timestamps and use the most recent
-                        const localTimestamp = localItem ? JSON.parse(localItem).timestamp : 0;
-                        const cloudTimestamp = cloudData.timestamp || 0;
-
-                        if (cloudTimestamp > localTimestamp) {
-                            // Cloud data is newer, update local storage
-                            localStorage.setItem(localKey, JSON.stringify({
-                                data: cloudData.data,
-                                timestamp: cloudTimestamp,
-                                synced: true
-                            }));
-                            return cloudData.data;
-                        }
-                    }
-                } catch (error) {
-                    console.warn('Failed to load from cloud, using local data:', error);
-                }
+            if (cloudData) {
+                console.log(`✅ Loaded from Firebase: ${key}`);
+                return cloudData.data;
             }
 
-            return localData;
+            return null;
         } catch (error) {
             console.error('Error loading data:', error);
-            return null;
+            throw error; // Propagate error to caller
         }
     }
 
     async deleteData(key) {
         try {
-            const localKey = `${this.userId}_${key}`;
-
-            // Check what type of storage reference this is
-            const localItem = localStorage.getItem(localKey);
-            let isFirestoreRef = false;
-            let isStorageRef = false;
-
-            if (localItem) {
-                try {
-                    const parsed = JSON.parse(localItem);
-                    isFirestoreRef = parsed.isFirestoreRef;
-                    isStorageRef = parsed.data && parsed.data.isStorageRef;
-                } catch (e) {
-                    // Ignore parsing errors
-                }
+            // Check if Firebase is available
+            if (!this.isOnline || !firebaseReady) {
+                throw new Error('Cannot delete: Internet connection required. Please check your connection and try again.');
             }
 
-            // Remove from localStorage
-            localStorage.removeItem(localKey);
+            // First, check if this is a media file by loading metadata from Firestore
+            const isMediaFile = key.includes('music_') || key.includes('photo_');
 
-            // Delete from appropriate cloud storage
-            if (this.isOnline && firebaseReady) {
-                if (isStorageRef) {
-                    // Delete from Firebase Storage
-                    await this.deleteFromFirebaseStorage(key);
-                    console.log(`Deleted audio file from Firebase Storage: ${key}`);
-                } else if (db) {
-                    // Delete from Firestore
-                    await this.deleteFromFirestore(key);
-                    if (isFirestoreRef) {
-                        console.log(`Deleted large file from Firestore: ${key}`);
-                    }
-                }
-            } else if (isFirestoreRef || isStorageRef) {
-                // Queue cloud deletions for later
-                this.pendingOperations.push({
-                    type: 'delete',
-                    key: key,
-                    timestamp: Date.now(),
-                    isFirestoreRef: isFirestoreRef,
-                    isStorageRef: isStorageRef
-                });
-                console.log(`Queued cloud deletion: ${key}`);
-            } else {
-                // Queue for later sync (regular data)
-                this.pendingOperations.push({
-                    type: 'delete',
-                    key: key,
-                    timestamp: Date.now()
-                });
+            if (isMediaFile) {
+                // Delete from Firebase Storage first
+                await this.deleteFromFirebaseStorage(key);
+                console.log(`✅ Deleted media file from Firebase Storage: ${key}`);
+            }
+
+            // Delete metadata/data from Firestore
+            if (db) {
+                await this.deleteFromFirestore(key);
+                console.log(`✅ Deleted from Firestore: ${key}`);
             }
 
             return true;
@@ -562,11 +423,11 @@ class StorageManager {
             // Determine storage path based on file type
             let storagePath;
             if (key.includes('music_')) {
-                storagePath = `audio/${this.userId}/${key}`;
+                storagePath = `shared/audio/${key}`;
             } else if (key.includes('photo_')) {
-                storagePath = `photos/${this.userId}/${key}`;
+                storagePath = `shared/photos/${key}`;
             } else {
-                storagePath = `media/${this.userId}/${key}`;
+                storagePath = `shared/media/${key}`;
             }
 
             // Create storage reference
@@ -607,11 +468,11 @@ class StorageManager {
             // Determine storage path based on file type
             let storagePath;
             if (key.includes('music_')) {
-                storagePath = `audio/${this.userId}/${key}`;
+                storagePath = `shared/audio/${key}`;
             } else if (key.includes('photo_')) {
-                storagePath = `photos/${this.userId}/${key}`;
+                storagePath = `shared/photos/${key}`;
             } else {
-                storagePath = `media/${this.userId}/${key}`;
+                storagePath = `shared/media/${key}`;
             }
 
             const storageRef = window.storage.ref();
@@ -625,43 +486,7 @@ class StorageManager {
         }
     }
 
-    async processPendingOperations() {
-        if (!this.isOnline || !firebaseReady || !db || this.pendingOperations.length === 0) {
-            return;
-        }
 
-        console.log(`Processing ${this.pendingOperations.length} pending operations...`);
-
-        const operations = [...this.pendingOperations];
-        this.pendingOperations = [];
-
-        for (const operation of operations) {
-            try {
-                if (operation.type === 'save') {
-                    await this.saveToFirestore(operation.key, operation.data);
-
-                    // Update local storage to mark as synced
-                    const localKey = `${this.userId}_${operation.key}`;
-                    const localItem = localStorage.getItem(localKey);
-                    if (localItem) {
-                        const parsed = JSON.parse(localItem);
-                        parsed.synced = true;
-                        localStorage.setItem(localKey, JSON.stringify(parsed));
-                    }
-                } else if (operation.type === 'delete') {
-                    await this.deleteFromFirestore(operation.key);
-                }
-            } catch (error) {
-                console.error('Failed to process pending operation:', error);
-                // Re-queue failed operations
-                this.pendingOperations.push(operation);
-            }
-        }
-
-        if (this.pendingOperations.length === 0) {
-            console.log('All pending operations processed successfully');
-        }
-    }
 
     getUserId() {
         return this.userId;
@@ -672,63 +497,24 @@ class StorageManager {
             online: this.isOnline,
             firebaseAvailable: !!db,
             firebaseReady: firebaseReady,
-            authenticated: !!currentUser,
-            pendingOperations: this.pendingOperations.length
+            authenticated: !!currentUser
         };
-    }
-
-    async syncAllData() {
-        if (!this.isOnline || !this.db) {
-            console.warn('Cannot sync: offline or Firebase unavailable');
-            return false;
-        }
-
-        try {
-            // Get all local data that needs syncing
-            const localKeys = Object.keys(localStorage).filter(key =>
-                key.startsWith(this.userId + '_')
-            );
-
-            for (const localKey of localKeys) {
-                const item = localStorage.getItem(localKey);
-                if (item) {
-                    const parsed = JSON.parse(item);
-                    if (!parsed.synced) {
-                        const key = localKey.replace(this.userId + '_', '');
-                        await this.saveToFirestore(key, parsed.data);
-
-                        // Mark as synced
-                        parsed.synced = true;
-                        localStorage.setItem(localKey, JSON.stringify(parsed));
-                    }
-                }
-            }
-
-            console.log('Data sync completed');
-            return true;
-        } catch (error) {
-            console.error('Error during data sync:', error);
-            return false;
-        }
     }
 
     async testCloudSync() {
         if (!this.isOnline || !firebaseReady || !db) {
-            console.log('❌ Cloud sync test failed: not ready');
-            return { success: false, message: 'Cloud sync not available' };
+            console.log('❌ Firebase test failed: not ready');
+            return { success: false, message: 'Firebase not available' };
         }
 
         try {
-            console.log('🧪 Testing cloud sync capability...');
+            console.log('🧪 Testing Firebase connection...');
 
             // Test write
             const testKey = `sync_test_${Date.now()}`;
             const testData = { test: true, timestamp: Date.now() };
 
-            const success = await this.saveData(testKey, testData);
-            if (!success) {
-                return { success: false, message: 'Write test failed' };
-            }
+            await this.saveData(testKey, testData);
 
             // Test read
             const readData = await this.loadData(testKey);
@@ -748,86 +534,7 @@ class StorageManager {
         }
     }
 
-    async checkStorageQuota(newDataSize) {
-        try {
-            // Estimate current localStorage usage
-            let currentSize = 0;
-            for (let key in localStorage) {
-                if (localStorage.hasOwnProperty(key)) {
-                    currentSize += localStorage[key].length + key.length;
-                }
-            }
 
-            // Estimate available space (most browsers have 5-10MB limit)
-            const estimatedLimit = 5 * 1024 * 1024; // 5MB conservative estimate
-            const availableSpace = estimatedLimit - currentSize;
-
-            console.log(`Storage usage: ${(currentSize / 1024 / 1024).toFixed(2)}MB, Available: ${(availableSpace / 1024 / 1024).toFixed(2)}MB`);
-
-            if (newDataSize > availableSpace) {
-                console.warn('Storage quota may be exceeded, attempting cleanup...');
-
-                // Try to free up space by removing old data
-                await this.cleanupOldData();
-
-                // Check again after cleanup
-                let newCurrentSize = 0;
-                for (let key in localStorage) {
-                    if (localStorage.hasOwnProperty(key)) {
-                        newCurrentSize += localStorage[key].length + key.length;
-                    }
-                }
-
-                const newAvailableSpace = estimatedLimit - newCurrentSize;
-                if (newDataSize > newAvailableSpace) {
-                    throw new Error('Storage quota exceeded. Please delete some files to free up space.');
-                }
-            }
-        } catch (error) {
-            console.error('Storage quota check failed:', error);
-            throw error;
-        }
-    }
-
-    async cleanupOldData() {
-        try {
-            console.log('Cleaning up old data to free storage space...');
-
-            // Get all user data keys with timestamps
-            const userKeys = Object.keys(localStorage)
-                .filter(key => key.startsWith(this.userId + '_'))
-                .map(key => {
-                    try {
-                        const data = JSON.parse(localStorage[key]);
-                        return {
-                            key,
-                            timestamp: data.timestamp || 0,
-                            size: localStorage[key].length
-                        };
-                    } catch {
-                        return { key, timestamp: 0, size: localStorage[key].length };
-                    }
-                })
-                .sort((a, b) => a.timestamp - b.timestamp); // Oldest first
-
-            // Remove oldest 20% of data if we have more than 10 items
-            if (userKeys.length > 10) {
-                const itemsToRemove = Math.ceil(userKeys.length * 0.2);
-                let removedSize = 0;
-
-                for (let i = 0; i < itemsToRemove; i++) {
-                    const item = userKeys[i];
-                    removedSize += item.size;
-                    localStorage.removeItem(item.key);
-                    console.log(`Removed old data: ${item.key} (${(item.size / 1024).toFixed(1)}KB)`);
-                }
-
-                console.log(`Cleanup completed: freed ${(removedSize / 1024 / 1024).toFixed(2)}MB`);
-            }
-        } catch (error) {
-            console.error('Cleanup failed:', error);
-        }
-    }
 
     updateConnectionStatus() {
         // Create or update connection status indicator
@@ -854,24 +561,20 @@ class StorageManager {
         const status = this.getConnectionStatus();
         if (status.firebaseAvailable && status.online && status.firebaseReady) {
             statusElement.className = 'connection-status online';
-            statusElement.textContent = 'Cloud sync active';
-            statusElement.title = 'Data is being synced to Firebase Cloud Storage';
+            statusElement.textContent = 'Firebase connected';
+            statusElement.title = 'All data stored in Firebase (shared across devices)';
         } else if (status.online && !status.firebaseAvailable) {
             statusElement.className = 'connection-status error';
-            statusElement.textContent = 'Cloud sync unavailable';
-            statusElement.title = 'Firebase connection failed - using local storage only';
+            statusElement.textContent = 'Firebase unavailable';
+            statusElement.title = 'Firebase connection failed - cannot save/load data';
         } else if (!status.online) {
             statusElement.className = 'connection-status offline';
-            statusElement.textContent = 'Offline mode';
-            statusElement.title = 'No internet connection - data saved locally';
+            statusElement.textContent = 'Offline';
+            statusElement.title = 'No internet connection - Firebase operations unavailable';
         } else {
             statusElement.className = 'connection-status error';
-            statusElement.textContent = 'Sync initializing...';
+            statusElement.textContent = 'Connecting...';
             statusElement.title = 'Firebase connection is being established';
-        }
-
-        if (status.pendingOperations > 0) {
-            statusElement.textContent += ` (${status.pendingOperations} pending)`;
         }
 
         // Update status periodically
@@ -1981,7 +1684,7 @@ class PhotosApp {
                 // For timeout errors or Firestore errors, still consider it a success
                 // if we can save to localStorage directly
                 try {
-                    const localKey = `${this.storageManager.userId}_photo_${photo.id}`;
+                    const localKey = `shared_photo_${photo.id}`;
                     localStorage.setItem(localKey, JSON.stringify({
                         data: photo.toJSON(),
                         timestamp: Date.now(),
@@ -2282,12 +1985,30 @@ class PhotosApp {
     }
 
     async getPhotoKeys() {
-        // Get all localStorage keys that start with userId_photo_
-        const userId = this.storageManager.getUserId();
-        const allKeys = Object.keys(localStorage);
-        return allKeys
-            .filter(key => key.startsWith(`${userId}_photo_`))
-            .map(key => key.replace(`${userId}_`, ''));
+        // Get all photo keys from Firestore
+        if (!db) {
+            console.warn('Firestore not available');
+            return [];
+        }
+
+        try {
+            const snapshot = await db.collection('app-data')
+                .where('sessionId', '!=', null) // Get all documents
+                .get();
+
+            const photoKeys = [];
+            snapshot.forEach(doc => {
+                const key = doc.id;
+                if (key.startsWith('photo_')) {
+                    photoKeys.push(key);
+                }
+            });
+
+            return photoKeys;
+        } catch (error) {
+            console.error('Error getting photo keys from Firestore:', error);
+            return [];
+        }
     }
 
     showUploadProgress(fileCount) {
@@ -3812,12 +3533,30 @@ class MusicPlayerApp {
     }
 
     async getMusicKeys() {
-        // Get all localStorage keys that start with userId_music_
-        const userId = this.storageManager.getUserId();
-        const allKeys = Object.keys(localStorage);
-        return allKeys
-            .filter(key => key.startsWith(`${userId}_music_`))
-            .map(key => key.replace(`${userId}_`, ''));
+        // Get all music keys from Firestore
+        if (!db) {
+            console.warn('Firestore not available');
+            return [];
+        }
+
+        try {
+            const snapshot = await db.collection('app-data')
+                .where('sessionId', '!=', null)
+                .get();
+
+            const musicKeys = [];
+            snapshot.forEach(doc => {
+                const key = doc.id;
+                if (key.startsWith('music_')) {
+                    musicKeys.push(key);
+                }
+            });
+
+            return musicKeys;
+        } catch (error) {
+            console.error('Error getting music keys from Firestore:', error);
+            return [];
+        }
     }
 
     formatTime(seconds) {
@@ -4022,12 +3761,30 @@ class DesktopManager {
     }
 
     async getPhotoKeys() {
-        // Get all localStorage keys that start with userId_photo_
-        const userId = this.storageManager.getUserId();
-        const allKeys = Object.keys(localStorage);
-        return allKeys
-            .filter(key => key.startsWith(`${userId}_photo_`))
-            .map(key => key.replace(`${userId}_`, ''));
+        // Get all photo keys from Firestore
+        if (!db) {
+            console.warn('Firestore not available');
+            return [];
+        }
+
+        try {
+            const snapshot = await db.collection('app-data')
+                .where('sessionId', '!=', null)
+                .get();
+
+            const photoKeys = [];
+            snapshot.forEach(doc => {
+                const key = doc.id;
+                if (key.startsWith('photo_')) {
+                    photoKeys.push(key);
+                }
+            });
+
+            return photoKeys;
+        } catch (error) {
+            console.error('Error getting photo keys from Firestore:', error);
+            return [];
+        }
     }
 
     cleanupExistingControls() {
@@ -4600,21 +4357,57 @@ class DesktopManager {
     }
 
     async getPhotoKeys() {
-        // Get all localStorage keys that start with userId_photo_
-        const userId = this.storageManager.getUserId();
-        const allKeys = Object.keys(localStorage);
-        return allKeys
-            .filter(key => key.startsWith(`${userId}_photo_`))
-            .map(key => key.replace(`${userId}_`, ''));
+        // Get all photo keys from Firestore
+        if (!db) {
+            console.warn('Firestore not available');
+            return [];
+        }
+
+        try {
+            const snapshot = await db.collection('app-data')
+                .where('sessionId', '!=', null)
+                .get();
+
+            const photoKeys = [];
+            snapshot.forEach(doc => {
+                const key = doc.id;
+                if (key.startsWith('photo_')) {
+                    photoKeys.push(key);
+                }
+            });
+
+            return photoKeys;
+        } catch (error) {
+            console.error('Error getting photo keys from Firestore:', error);
+            return [];
+        }
     }
 
     async getMusicKeys() {
-        // Get all localStorage keys that start with userId_music_
-        const userId = this.storageManager.getUserId();
-        const allKeys = Object.keys(localStorage);
-        return allKeys
-            .filter(key => key.startsWith(`${userId}_music_`))
-            .map(key => key.replace(`${userId}_`, ''));
+        // Get all music keys from Firestore
+        if (!db) {
+            console.warn('Firestore not available');
+            return [];
+        }
+
+        try {
+            const snapshot = await db.collection('app-data')
+                .where('sessionId', '!=', null)
+                .get();
+
+            const musicKeys = [];
+            snapshot.forEach(doc => {
+                const key = doc.id;
+                if (key.startsWith('music_')) {
+                    musicKeys.push(key);
+                }
+            });
+
+            return musicKeys;
+        } catch (error) {
+            console.error('Error getting music keys from Firestore:', error);
+            return [];
+        }
     }
 
     displayPhoto(photo, gallery) {
